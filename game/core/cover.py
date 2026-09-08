@@ -26,19 +26,31 @@ def _stack_of(tile):
 def refresh_cover(tiles):
     """全量重算每张场上(zone==board)牌的 clickable 与 visible,原地写回。
 
-    A 区牌只与 A 区牌比(生成器保证 A/B 区物理不重叠);B 区牌只在同摞内比
-    更高层。dim/hidden 的分界是"覆盖它的牌来自多少个不同 layer"(去重计数,
-    warma13 逆向模型,§3.1)。
+    A 区用空间哈希(每张牌注册到它占的 4 个格,查询只看共享格里的更高层
+    牌)把"找更高层的重叠牌"从 O(n²) 降到 O(n)——264 张牌 22 层的塔,
+    逆向构造/求解器一步一算也不卡。B 区仍在同摞内逐张比(每摞就 11 张)。
+    等价性:AABB 重叠(|Δrol|<2 且 |Δrow|<2)⟺ 两张 2×2 牌存在共享格。
     """
     board = [t for t in tiles if t.zone == "board"]
+    grid = {}          # (列,行)格 → 占这格的 A 区牌
+    stacks = {}        # B 摞号 → 摞内牌
     for t in board:
         if t.mold == 1:
-            overlays = [o for o in board
-                        if o.mold == 1 and o.layer > t.layer and covered(t, o)]
+            for cell in ((t.rol, t.row), (t.rol + 1, t.row),
+                         (t.rol, t.row + 1), (t.rol + 1, t.row + 1)):
+                grid.setdefault(cell, []).append(t)
         else:
-            stack = _stack_of(t)
-            overlays = [o for o in board
-                        if o.mold == 2 and _stack_of(o) == stack and o.layer > t.layer]
+            stacks.setdefault(_stack_of(t), []).append(t)
+    for t in board:
+        if t.mold == 1:
+            overlays = set()
+            for cell in ((t.rol, t.row), (t.rol + 1, t.row),
+                         (t.rol, t.row + 1), (t.rol + 1, t.row + 1)):
+                for o in grid.get(cell, ()):
+                    if o.layer > t.layer:
+                        overlays.add(o)      # set 按身份去重(同一张牌占多个共享格)
+        else:
+            overlays = [o for o in stacks[_stack_of(t)] if o.layer > t.layer]
         t.clickable = not overlays
         n_layers = len({o.layer for o in overlays})
         t.visible = BRIGHT if n_layers == 0 else (DIM if n_layers == 1 else HIDDEN)

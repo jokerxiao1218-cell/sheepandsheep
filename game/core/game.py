@@ -10,6 +10,7 @@ import random
 from .cover import pick as _pick, refresh_cover
 from .props import move_out as _move_out, shuffle_tiles, undo_pop
 from .slot import is_full, insert as _slot_insert
+from .solver import deal_solvable
 from .tiles import deal_random, load_levels, make_skeleton
 
 STATUS_PLAYING, STATUS_WIN, STATUS_LOSE = "playing", "win", "lose"
@@ -28,13 +29,19 @@ class Game:
         key = str(level_id)
         if key not in levels:
             raise ValueError(f"没有这一关:{level_id!r},现有 {sorted(levels)}")
-        if mode != "classic":
-            raise ValueError(f"模式暂只支持 classic(solvable 于 batch 4 接入),收到 {mode!r}")
+        if mode not in ("classic", "solvable"):
+            raise ValueError(f"模式只支持 classic/solvable,收到 {mode!r}")
         params = levels[key]
         self.level_id = key
         self.mode = mode
         self.tiles = make_skeleton(params, params["skeleton_seed"])
-        deal_random(self.tiles, params["block_type_data"], pattern_seed)
+        self.solution = None          # solvable 模式存构造出的通关序列
+        if mode == "classic":
+            deal_random(self.tiles, params["block_type_data"], pattern_seed)
+        else:
+            seed = pattern_seed if pattern_seed is not None \
+                else random.randrange(2 ** 31)
+            self.solution = deal_solvable(self.tiles, params["block_type_data"], seed)
         self.slot = []            # 槽内牌(聚集有序)
         self.out_zone = []        # 移出区(batch 3 道具用)
         self.history = []         # 撤销栈 [(tile_id, 来源来源区)],batch 3 用

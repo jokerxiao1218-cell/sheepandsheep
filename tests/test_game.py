@@ -122,7 +122,7 @@ def test_bad_level_and_mode():
     with pytest.raises(ValueError, match="没有这一关"):
         Game(9)
     with pytest.raises(ValueError, match="classic"):
-        Game(1, mode="solvable")       # batch 4 接入,现在就该拒绝
+        Game(1, mode="复活")       # 不存在的模式
 
 
 # ---------------------------------------------------------------- §6.3-16 / §6.1-6

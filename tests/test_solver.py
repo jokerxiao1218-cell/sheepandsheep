@@ -101,16 +101,32 @@ def test_solve_respects_budget():
 
 
 def test_solve_with_out_zone_returns_none():
+    """移出区有牌:不搜,如实返回 None。构造是固定 seed 的确定性操作,
+    前提必须硬断言——曾用恒真 else 兜底,构造失败时这个唯一覆盖会静默消失。"""
     g = Game(2, pattern_seed=0)
-    for t in g.board_tiles():                  # 手工凑 3 张进槽再移出
-        if t.clickable:
+    picked_types = set()                       # 只点互不同图案的明牌:不可能三消
+    for t in g.board_tiles():
+        if t.clickable and t.type not in picked_types:
             g.click(t.id)
+            picked_types.add(t.type)
         if len(g.slot) >= 3:
             break
-    if len(g.slot) >= 3 and g.use_prop("move_out"):
-        assert solve(g) is None                # 有牌困在移出区:不搜,如实说
-    else:                                      # 构造不成就跳过(道具测试别处覆盖)
-        assert solve(g) is None or isinstance(solve(g), list)
+    assert len(g.slot) == 3, "3 张异图案明牌凑不进槽:构造前提坏了"
+    assert g.use_prop("move_out") is True       # 前提失败要大声红,不许静默绿
+    assert solve(g) is None                     # 有牌困在移出区:不搜,如实说
+
+
+def test_solve_respects_node_budget():
+    """max_nodes 维度独立钉死:节点预算远小于时间预算时必须先触发
+    (回归:曾只验时间维度,节点检查失效被时间预算兜底掩盖)。"""
+    g = Game(2, pattern_seed=0)
+    before = g.snapshot()
+    start = time.monotonic()
+    seq = solve(g, SolveBudget(max_nodes=50, time_limit=60.0))
+    spent = time.monotonic() - start
+    assert spent < 5.0                        # 50 个节点微秒级,远早于时间预算
+    assert seq is None                         # 第二关 88 组消除,50 节点内到不了
+    assert g.snapshot() == before              # 原局不动
 
 
 def test_solve_finished_game_returns_none():

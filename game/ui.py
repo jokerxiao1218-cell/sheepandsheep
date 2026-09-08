@@ -13,6 +13,7 @@
   B 区 2 摞盲盒 摞顶 y=632、每张向下偏 6px(原版只露 6px 阴影条)
   移出区 y=776(3 格,原版临时区在槽上方)
   槽 y=856(7 格,原版槽在最底)
+  状态行 y=932(屏底,场上/槽数计数——放 A 区内会被牌堆盖住)
 """
 import pygame
 
@@ -117,6 +118,7 @@ class PlayScene(Scene):
                           default=0)
         self.anims = []            # 牌动画:fly 飞入槽 / fade 淡出消除
         self._finish_pending = False
+        self._click_lock = 0.0     # 防连点锁:点牌后 0.15s 内忽略下一次牌点击(§3.3)
         self.buttons = [
             (pygame.Rect(300 + i * 78, 4, 72, 32), kind, label)
             for i, (kind, label) in enumerate(PROPS)
@@ -157,9 +159,10 @@ class PlayScene(Scene):
         g = self.game
         if g.status != "playing":
             return
-        for rect, kind, _ in self.buttons:          # 1) 道具按钮
+        for rect, kind, _ in self.buttons:          # 1) 道具按钮(不受连点锁限制)
             if rect.collidepoint(pos):
-                g.use_prop(kind)
+                if g.use_prop(kind):
+                    self._sync_anims()               # 道具改了牌的区属:失效动画清掉
                 return
         hits = []                                   # 2) 牌:命中取 layer 最高
         for t in g.tiles:
@@ -170,28 +173,47 @@ class PlayScene(Scene):
                 hits.append((t, r))
         if not hits:
             return
+        if self._click_lock > 0:                    # 动画还在播:吞掉连点(§3.3)
+            return
         target, frm = max(hits, key=lambda p: p[0].layer)
         slot_rects = {t.id: self.tile_rect(t) for t in g.slot}
+        # 飞行终点 = 聚集插入后的真实槽位(同图案最后一张的右一格,槽空则末位)。
+        # 不能用点击后的 len(slot):它比真实落位至少偏右一格,还会越出槽区。
+        same_idx = [i for i, s in enumerate(g.slot) if s.type == target.type]
+        ins = (same_idx[-1] + 1) if same_idx else len(g.slot)
+        to = pygame.Rect(SLOT_X0 + ins * ROW_PITCH, SLOT_Y, TILE, TILE)
         r = g.click(target.id)
         if not r["ok"]:
             return
-        to_x = SLOT_X0 + len(g.slot) * ROW_PITCH
-        to = pygame.Rect(to_x, SLOT_Y, TILE, TILE)
         if r["eliminated"]:
             for gone in r["eliminated"]:
+                if gone is target:
+                    continue                        # 被点的第 3 张走"边飞边淡",别重影
                 self.anims.append({"tile": gone, "kind": "fade", "t": 0.0,
-                                   "dur": 0.22, "rect": slot_rects.get(gone.id, frm)})
+                                   "dur": 0.22, "rect": slot_rects[gone.id]})
             self.anims.append({"tile": target, "kind": "fade", "t": 0.0,
                                "dur": 0.22, "rect": to, "fly": frm})
         else:
             self.anims.append({"tile": target, "kind": "fly", "t": 0.0,
                                "dur": 0.16, "from": frm, "to": to})
+        self._click_lock = 0.15
         if g.status != "playing":
             self._finish_pending = True
+
+    def _sync_anims(self):
+        """道具改变牌的区属后,丢弃终点已失效的动画。
+
+        撤销把牌退回场上/移出区、移出把槽头牌搬去移出区——这些牌若还有
+        进行中的 fly 动画(终点是槽),动画与真实位置会同屏画两份。
+        牌已不在 slot/gone 的动画一律作废。
+        """
+        self.anims = [a for a in self.anims if a["tile"].zone in ("slot", "gone")]
 
     # ------------------------------------------------------------ 帧驱动
 
     def update(self, dt):
+        if self._click_lock > 0:
+            self._click_lock = max(0.0, self._click_lock - dt)
         alive = []
         for a in self.anims:
             a["t"] += dt
@@ -227,7 +249,7 @@ class PlayScene(Scene):
         info = assets.cn_font(18).render(
             f"{label} · 场上 {sum(1 for t in g.tiles if t.zone == 'board')} 张 · "
             f"槽 {len(g.slot)}/7", True, FG)
-        screen.blit(info, (12, 60))
+        screen.blit(info, (12, 932))          # 屏底空带:A 区再满也盖不到计数
         for rect, kind, text in self.buttons:
             ok = g.status == "playing" and not g.prop_used[kind] and (
                 kind != "move_out" or len(g.slot) >= 3) and (
@@ -259,8 +281,9 @@ class PlayScene(Scene):
     def _draw_zones(self, screen, anim_ids):
         for t in list(self.game.slot) + list(self.game.out_zone):
             if t.id not in anim_ids:
-                screen.blit(assets.tile_face(t.type, TILE),
-                            self.tile_rect(t).topleft)
+                rect = self.tile_rect(t)
+                if rect:                      # 守卫:zone 异常的牌不渲染也不崩
+                    screen.blit(assets.tile_face(t.type, TILE), rect.topleft)
 
     def _draw_anims(self, screen):
         for a in self.anims:
@@ -288,6 +311,10 @@ class ResultScene(Scene):
         self.status = status
         self.level_id = level_id
         self.mode = mode
+        # 压栈瞬间屏幕上正是终局画面:定格为结算幕的底图。此后每帧重铺
+        # 底图再叠一次半透明纱——画面稳定;不定格的话每帧往旧画面上再叠
+        # 一层纱,亮度逐帧衰减,终局画面 1 帧后就被纱埋成纯色。
+        self.base = app.screen.copy()
         self.buttons = [
             (pygame.Rect(90, 520, 360, 64), "再来一局", "retry"),
             (pygame.Rect(90, 620, 360, 64), "回菜单", "menu"),
@@ -306,6 +333,7 @@ class ResultScene(Scene):
                         return
 
     def draw(self, screen):
+        screen.blit(self.base, (0, 0))               # 底图定格:先重铺再叠纱
         veil = pygame.Surface((W, H), pygame.SRCALPHA)
         veil.fill((12, 14, 20, 200))
         screen.blit(veil, (0, 0))

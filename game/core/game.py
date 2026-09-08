@@ -94,6 +94,8 @@ class Game:
                     "eliminated": []}
         source = tile.zone                       # "board" 或 "out"
         tile.zone = "slot"
+        if source == "out":                      # 列表与 zone 必须同步,残留会虚报
+            self.out_zone.remove(tile)           # 计数、让渲染拿到已不在区的牌
         eliminated = _slot_insert(self.slot, tile)
         for t in eliminated:
             t.zone = "gone"
@@ -149,6 +151,8 @@ class Game:
         tile = self._index[tile_id]
         self.slot.remove(tile)                     # 按对象身份移除(正是那张牌)
         tile.zone = source                          # "board" 或 "out"
+        if source == "out":                        # 退回移出区:列表同步恢复
+            self.out_zone.append(tile)              # (click 点回时已把它移出列表)
         refresh_cover(self.tiles)                   # 回场上的牌重新判定遮挡
         self.prop_used[kind] = True
         return True

@@ -16,7 +16,7 @@ def ease_out_quad(t):
 
 
 class Tween:
-    """动画队列:add(duration, on_update, on_done) 后每帧 update(dt) 推进。
+    """动画队列:add(duration, ease, on_update, on_done) 后每帧 update(dt) 推进。
 
     on_update 收到的值是"缓动后的进度 0..1"(不是原始 t),回调自己拿它
     去算位置/透明度;on_done 在动画完成那一帧触发一次。
@@ -25,7 +25,8 @@ class Tween:
     def __init__(self):
         self._items = []
 
-    def add(self, duration, on_update, on_done=None, ease=ease_out_quad):
+    def add(self, duration, ease, on_update, on_done=None):
+        """参数顺序即 §5.2 M9 契约:duration, ease, on_update, on_done。"""
         if duration <= 0:
             raise ValueError(f"动画时长必须为正数,收到 {duration!r}")
         self._items.append({"left": duration, "dur": duration, "cb": on_update,

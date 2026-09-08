@@ -179,9 +179,23 @@ def _make_layer_counts(za):
             (i for i in range(n) if i != pk_l - 1),
             key=lambda i: (abs(i - (pk_l - 1)), i),
         )
-        for j in range(diff):
-            counts[around[j % len(around)]] += 1
-    while diff < 0:
+        if not around:
+            around = [pk_l - 1]        # 单层关:唯一层就是峰层,只能补它
+        room = sum(max(0, pk_c - counts[i]) for i in around)
+        if room < diff:
+            raise LevelError(
+                f"层曲线凑不出 total={total}:可补的层全部补到 peak_count={pk_c} "
+                f"上限仍差 {diff - room} 张,调大 peak_count 或调小 total"
+            )
+        j = 0
+        while diff > 0:                # 近峰优先,但跳过已到上限的层
+            i = around[j % len(around)]
+            if counts[i] < pk_c:
+                counts[i] += 1
+                diff -= 1
+            j += 1
+    while diff < 0:                    # 多趟扣:每趟从离峰最远的层扣 1 张,
+        progress = False               # 峰位最后动(保峰形);整趟无进展才是真凑不出
         far = sorted(range(n), key=lambda i: (-abs(i - (pk_l - 1)), i))
         for i in far:
             if diff == 0:
@@ -189,9 +203,11 @@ def _make_layer_counts(za):
             if counts[i] > 1:
                 counts[i] -= 1
                 diff += 1
-        if diff < 0:
+                progress = True
+        if diff < 0 and not progress:
             raise LevelError(
-                f"层曲线凑不出 total={total}:每层已保底 1 张仍差 {-diff} 张,调参数"
+                f"层曲线凑不出 total={total}:每层已保底 1 张仍差 {-diff} 张,"
+                f"调大 total 或调小 layers"
             )
     if sum(counts) != total:
         raise LevelError(f"层曲线内部不变量破坏:和 {sum(counts)} ≠ total={total}")

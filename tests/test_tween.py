@@ -21,7 +21,7 @@ def test_ease_out_quad():
 def test_tween_updates_and_finishes():
     tw = Tween()
     seen = []
-    tw.add(0.2, seen.append)
+    tw.add(0.2, ease_out_quad, seen.append)
     assert len(tw) == 1
     tw.update(0.1)                            # 走一半
     assert seen == [0.75]                      # ease_out_quad(0.5)
@@ -33,7 +33,7 @@ def test_tween_updates_and_finishes():
 def test_tween_on_done_once():
     calls = []
     tw = Tween()
-    tw.add(0.1, lambda v: None, on_done=lambda: calls.append(1))
+    tw.add(0.1, ease_out_quad, lambda v: None, on_done=lambda: calls.append(1))
     tw.update(0.2)
     assert calls == [1]
     tw.update(0.2)                             # 已移除,不再触发
@@ -43,6 +43,6 @@ def test_tween_on_done_once():
 def test_tween_rejects_bad_duration():
     tw = Tween()
     with pytest.raises(ValueError, match="正数"):
-        tw.add(0, lambda v: None)
+        tw.add(0, ease_out_quad, lambda v: None)
     with pytest.raises(ValueError, match="正数"):
-        tw.add(-0.5, lambda v: None)
+        tw.add(-0.5, ease_out_quad, lambda v: None)

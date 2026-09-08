@@ -122,6 +122,47 @@ def test_layer_counts_rejects_impossible():
         tiles._make_layer_counts(za)
 
 
+def test_layer_counts_multi_pass_drawdown():
+    """diff<0 要多趟扣:total 介于 layers 与插值和之间的可行值不许误拒
+    (回归:曾只扣一趟就报"凑不出",且报错文案谎报差距)。"""
+    za = {"layers": 22, "total": 150, "peak_layer": 11, "peak_count": 18, "edge": 4}
+    counts = tiles._make_layer_counts(za)
+    assert sum(counts) == 150 and len(counts) == 22
+    assert all(c >= 1 for c in counts)
+    assert max(counts) <= 18
+
+
+def test_layer_counts_down_to_floor():
+    """极端下限:total = layers(每层恰 1 张)也凑得出。"""
+    za = {"layers": 22, "total": 22, "peak_layer": 11, "peak_count": 18, "edge": 4}
+    assert tiles._make_layer_counts(za) == [1] * 22
+
+
+def test_layer_counts_skips_saturated_layers():
+    """diff>0 轮询跳过已到 peak_count 的层:不把近峰层顶破上限再甩锅
+    "参数自相矛盾"(回归:该参数曾被误拒,可行曲线明明存在)。"""
+    za = {"layers": 4, "peak_layer": 2, "peak_count": 10, "edge": 2, "total": 34}
+    counts = tiles._make_layer_counts(za)
+    assert sum(counts) == 34
+    assert max(counts) <= 10
+    assert counts[1] == 10                      # 峰顶不动
+
+
+def test_layer_counts_saturation_shortfall_honest():
+    """补满可补层仍不够:如实报差距,而不是误导调参者去查别的字段。"""
+    za = {"layers": 3, "peak_layer": 2, "peak_count": 10, "edge": 1, "total": 40}
+    with pytest.raises(LevelError, match=r"凑不出.*仍差 10 张"):
+        tiles._make_layer_counts(za)
+
+
+def test_layer_counts_single_layer():
+    """单层关(唯一层即峰层):不再 j%0 裸崩 ZeroDivisionError,按契约报 LevelError。"""
+    za = {"layers": 1, "total": 3, "peak_layer": 1, "peak_count": 3, "edge": 1}
+    assert tiles._make_layer_counts(za) == [3]
+    with pytest.raises(LevelError, match="凑不出"):   # 超 peak_count:报错不裸崩
+        tiles._make_layer_counts({**za, "total": 5})
+
+
 # ---------------------------------------------------------------- 骨架 §6.1-1
 
 def test_skeleton_level1(levels):

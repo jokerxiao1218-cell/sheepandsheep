@@ -123,6 +123,48 @@ def test_out_zone_click_back_and_undo():
     assert picked2[0].zone == "out"                      # 撤回到移出区原位
 
 
+def test_out_zone_list_stays_in_sync():
+    """out_zone 列表与牌的 zone 必须同步:点回真移除、undo 退回真恢复
+    (回归:曾点回只改 zone 不动列表,残留让 snapshot 虚报、渲染拿到
+    已不在区的牌直接崩)。"""
+    g, picked = fresh_game_with_slot(3)
+    assert g.use_prop("move_out") is True
+    assert [o.id for o in g.out_zone] == [p.id for p in picked]
+    assert g.click(picked[0].id)["ok"] is True
+    assert [o.id for o in g.out_zone] == [p.id for p in picked[1:]]  # 列表真减一
+    assert g.snapshot()["out"] == 2
+    g2, picked2 = fresh_game_with_slot(3)
+    g2.use_prop("move_out")
+    g2.click(picked2[0].id)
+    assert g2.use_prop("undo") is True
+    assert sorted(o.id for o in g2.out_zone) == sorted(p.id for p in picked2)
+    assert g2.snapshot()["out"] == 3                     # 退回的牌回到计数里
+
+
+def test_out_zone_click_back_then_eliminate_cleans_list():
+    """点回的移出区牌被三消:out_zone 里不留 zone=gone 的死牌
+    (回归:曾残留 2 张 gone 牌,UI 遍历 out_zone 时崩溃)。"""
+    g = Game(1, pattern_seed=5)
+    by_type = {}
+    for t in g.board_tiles():
+        if t.clickable:
+            by_type.setdefault(t.type, []).append(t)
+    trio = next(v for v in by_type.values() if len(v) >= 3)[:3]
+    other = next(t for t in g.board_tiles()
+                 if t.clickable and t.type != trio[0].type)
+    g.click(trio[0].id)
+    g.click(trio[1].id)
+    g.click(other.id)                                    # 槽 [T, T, X]
+    assert g.use_prop("move_out") is True                # out_zone = [T, T, X]
+    g.click(trio[0].id)
+    g.click(trio[1].id)                                  # 点回 2 张 T:槽 [T, T]
+    r = g.click(trio[2].id)                              # 场上第 3 张 T → 三消
+    assert len(r["eliminated"]) == 3
+    assert all(o.zone == "out" for o in g.out_zone), \
+        "out_zone 残留了已消/已进槽的牌"
+    assert [o.id for o in g.out_zone] == [other.id]
+
+
 def test_undo_returns_tile_to_board():
     g, picked = fresh_game_with_slot(1)
     tile = picked[0]
@@ -169,14 +211,17 @@ def test_shuffle_prop_keeps_everything_but_types():
     board = g.board_tiles()
     before = {t.id: t.type for t in board}
     all_types_before = sorted(t.type for t in board)
-    g.click(g.board_tiles()[0].id)                      # 槽里再有一张
+    # 槽里再有一张:点一张真可点的明牌(board_tiles()[0] 是被埋的暗牌,点了
+    # 没反应,曾让下面"槽不动"断言退化为 []==[] 恒真空转)
+    g.click(next(t for t in board if t.clickable).id)
     slot_snapshot = [(t.id, t.type) for t in g.slot]
     out_snapshot = [(t.id, t.type) for t in g.out_zone]
+    assert len(slot_snapshot) == 1                       # 前置:牌真的进槽了
     assert g.use_prop("shuffle") is True
     after = {t.id: t.type for t in board}
-    assert sorted(after.values()) == all_types_before   # 图案多重集合不变
+    assert sorted(after.values()) == all_types_before    # 图案多重集合不变
     changed = sum(1 for k in before if before[k] != after[k])
-    assert changed >= 10                                 # 264 张里必然大换
+    assert changed >= 10                                  # 264 张里必然大换
     assert slot_snapshot == [(t.id, t.type) for t in g.slot]     # 槽不动
     assert out_snapshot == [(t.id, t.type) for t in g.out_zone]  # 移出区不动
     assert g.prop_used["shuffle"] is True

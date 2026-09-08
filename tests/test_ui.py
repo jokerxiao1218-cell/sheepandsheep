@@ -34,13 +34,24 @@ def test_menu_click_starts_level1():
     app.step([click(rect.center)])
     assert isinstance(app.scene(), PlayScene)
     assert app.scene().game.level_id == "1"
+    assert app.scene().game.mode == "classic"       # payload 两个分量都钉
 
 
 def test_menu_click_starts_level2_solvable():
     app = App()
     rect, _, _ = app.scene().buttons[2]
     app.step([click(rect.center)])
+    assert isinstance(app.scene(), PlayScene)
     assert app.scene().game.mode == "solvable"
+    assert app.scene().game.level_id == "2"         # 别接错关
+
+
+def test_menu_payloads_all_wired():
+    """4 个按钮的 payload 整表钉死:手写数组改错一半,这里立刻红。"""
+    app = App()
+    assert [p for _, _, p in app.scene().buttons] == [
+        (1, "classic"), (2, "classic"), (2, "solvable"), None,
+    ]
 
 
 def test_click_tile_moves_to_slot():
@@ -87,30 +98,92 @@ def test_prop_button_wired():
     assert len(scene.game.out_zone) == 3
 
 
-def test_level1_autoplay_end_to_end():
-    """§6.6-23 后半:第一关全程像素点击自动化,必到结算画面(胜)。"""
-    app = App()
-    app.scenes = [PlayScene(app, 1, "classic", pattern_seed=3)]
-    scene = app.scene()
-    rng = random.Random(3)
-    for _ in range(500):
+def autoplay_level1(app, scene, seed=3):
+    """第一关全程像素点击自动化,直到结算画面压栈。
+
+    点一次歇 10 帧(>0.15s 防连点锁、>0.16s 飞行动画):真人手速节奏,
+    连点本来就该被 UI 吞掉(§3.3)。
+    """
+    rng = random.Random(seed)
+    for _ in range(2000):
         if not isinstance(app.scene(), PlayScene):
-            break
+            return
         if scene.game.status != "playing":
             app.step([])                      # 等动画播完 → 结算覆盖层压栈
             continue
         ids = scene.game.clickable_ids()
         if not ids:
-            break
+            return
         tile = scene.game._index[rng.choice(ids)]
-        rect = scene.tile_rect(tile)
-        app.step([click(rect.center)])
+        app.step([click(scene.tile_rect(tile).center)])
+        for _ in range(10):
+            if not isinstance(app.scene(), PlayScene):
+                return
+            app.step([])
+
+
+def test_level1_autoplay_end_to_end():
+    """§6.6-23 后半:第一关全程像素点击自动化,必到结算画面(胜)。"""
+    app = App()
+    app.scenes = [PlayScene(app, 1, "classic", pattern_seed=3)]
+    autoplay_level1(app, app.scene())
     assert isinstance(app.scene(), ResultScene)
     assert app.scene().status == "win"
     # 结算画面:点"回菜单"
     menu_btn = next(r for r, t, a in app.scene().buttons if a == "menu")
     app.step([click(menu_btn.center)])
     assert isinstance(app.scene(), MenuScene)
+
+
+def test_result_scene_veil_stable():
+    """结算幕底图定格:第 1 帧与 6 帧后画面一致(回归:曾每帧往旧画面上
+    再叠一层纱,亮度逐帧衰减,终局画面 1 帧后就被埋成纯色)。"""
+    app = App()
+    app.scenes = [PlayScene(app, 1, "classic", pattern_seed=3)]
+    autoplay_level1(app, app.scene())
+    assert isinstance(app.scene(), ResultScene)
+    p1 = app.screen.get_at((270, 500))[:3]     # 结算幕首帧:底图+单层纱
+    for _ in range(6):
+        app.step([])
+    p2 = app.screen.get_at((270, 500))[:3]
+    assert p1 == p2, f"结算画面逐帧在变({p1} → {p2}):底图没定格,纱在累积"
+
+
+def test_out_zone_click_back_eliminate_renders():
+    """移出区牌点回槽再被三消:整条像素链路渲染不崩
+    (回归:out_zone 残留 zone=gone 的牌,_draw_zones 曾在淡出动画播完的
+    第一帧对 gone 牌取 tile_rect().topleft 抛 AttributeError,正常玩法必踩)。"""
+    app = App()
+    app.scenes = [PlayScene(app, 1, "classic", pattern_seed=5)]
+    scene = app.scene()
+    g = scene.game
+    by_type = {}
+    for t in g.board_tiles():
+        if t.clickable:
+            by_type.setdefault(t.type, []).append(t)
+    trio = next(v for v in by_type.values() if len(v) >= 3)[:3]
+    x = next(t for t in g.board_tiles()
+             if t.clickable and t.type != trio[0].type)
+
+    def settle():
+        for _ in range(10):                   # 消化连点锁与飞行动画
+            app.step([])
+
+    for t in (trio[0], trio[1], x):           # 槽 [T, T, X](明牌像素点击)
+        app.step([click(scene.tile_rect(t).center)])
+        settle()
+    btn = next(r for r, kind, _ in scene.buttons if kind == "move_out")
+    app.step([click(btn.center)])             # 移出:out_zone = [T, T, X]
+    settle()
+    for t in (trio[0], trio[1]):               # 像素点回移出区那 2 张 T
+        app.step([click(scene.tile_rect(t).center)])
+        settle()
+    app.step([click(scene.tile_rect(trio[2]).center)])   # 第 3 张 T → 三消
+    for _ in range(30):                       # 播完 0.22s 淡出动画后连画 30 帧
+        app.step([])                          # (回归点就在动画过期那一帧)
+    assert g.status == "playing"
+    assert g.snapshot()["out"] == 1           # 计数如实:只剩那张异图案牌
+    assert [o.id for o in g.out_zone] == [x.id]
 
 
 def test_escape_returns_to_menu():

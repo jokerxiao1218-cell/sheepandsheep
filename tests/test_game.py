@@ -90,6 +90,8 @@ def test_lose_on_seventh_without_match():
         if g.status == "lose":
             assert before == 6          # 第 7 张入槽瞬间
             break
+    assert g.status == "lose", \
+        "第二关随机瞎点竟没输:判负检测可能整个坏了,这测试不能零断言通过"
 
 
 # ---------------------------------------------------------------- §6.3-14
@@ -191,3 +193,33 @@ def test_snapshot_shape():
     assert s == {"level": "1", "mode": "classic", "status": "playing",
                  "board": 36, "slot": 0, "out": 0, "gone": 0,
                  "props": {"move_out": False, "shuffle": False, "undo": False}}
+
+
+def test_clickable_matches_independent_recalc():
+    """§6.4-19:每步后 Game 的可点集合与测试内独立重算(O(n²) 直译公式)一致——
+    空间哈希优化版 refresh_cover 与朴素公式必须逐张对得上。"""
+    def recalc(g):
+        board = [t for t in g.tiles if t.zone == "board"]
+        ok = set()
+        for t in board:
+            if t.mold == 2:
+                stack = t.id.split("-")[0]
+                top = max((o.layer for o in board
+                           if o.mold == 2 and o.id.split("-")[0] == stack),
+                          default=0)
+                if t.layer == top:
+                    ok.add(t.id)
+                continue
+            pressed = any(o.mold == 1 and o.layer > t.layer
+                          and abs(o.rol - t.rol) < 2 and abs(o.row - t.row) < 2
+                          for o in board)
+            if not pressed:
+                ok.add(t.id)
+        return ok
+
+    g = Game(1, pattern_seed=9)
+    rng = random.Random(9)
+    while g.status == "playing":
+        assert set(g.clickable_ids()) == recalc(g), "可点集合与独立重算不一致"
+        g.click(rng.choice(g.clickable_ids()))
+    assert g.status == "win"

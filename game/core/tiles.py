@@ -44,6 +44,8 @@ class Tile:
     layer:   层号,1 = 最底层,越大越靠上
     mold:    1 = A 区网格堆叠,2 = B 区盲盒摞
     zone:    board 场上 / slot 槽内 / out 移出区 / gone 已消除
+    clickable/visible: 由 cover.refresh_cover 维护的遮挡状态
+             (visible ∈ bright 明牌 / dim 被压灰显 / hidden 被≥2层压不渲染)
     """
 
     id: str
@@ -53,6 +55,8 @@ class Tile:
     type: int = 0
     mold: int = 1
     zone: str = "board"
+    clickable: bool = True
+    visible: str = "bright"
 
     def as_dict(self):
         """转普通 dict(快照/调试用)。"""

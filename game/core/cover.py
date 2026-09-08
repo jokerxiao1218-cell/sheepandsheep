@@ -1,0 +1,61 @@
+"""遮挡判定(设计文档 §3.1/§5.2 模块 M2)。
+
+A 区:与任何更高层的牌发生 AABB 矩形重叠(哪怕只压住一小角)即被压、不可点
+——抓包确证的口径。B 区:每摞只有最高层可点(原版盲盒摞只露顶牌)。
+视觉三态:bright 无覆盖 / dim 被压灰显 / hidden 被 ≥2 个不同层覆盖(不渲染,
+原版 20 多层的塔里整段被埋的牌就是这种)。
+
+每次动作后全量重算(不做增量关系网):264 张牌 O(n²)≈7 万次整数比较毫秒级;
+增量维护正是 yulegeyu 踩过的坑(撤回时漏了重绑覆盖关系),不做(§3.2)。
+"""
+from .tiles import TILE_SPAN
+
+BRIGHT, DIM, HIDDEN = "bright", "dim", "hidden"
+
+
+def covered(a, b):
+    """两牌 AABB 是否重叠:整数格上 |Δrol|<2 且 |Δrow|<2(各占 2×2 格)。"""
+    return abs(a.rol - b.rol) < TILE_SPAN and abs(a.row - b.row) < TILE_SPAN
+
+
+def _stack_of(tile):
+    """B 区牌的摞号:"B2-7" → "B2"。"""
+    return tile.id.split("-")[0]
+
+
+def refresh_cover(tiles):
+    """全量重算每张场上(zone==board)牌的 clickable 与 visible,原地写回。
+
+    A 区牌只与 A 区牌比(生成器保证 A/B 区物理不重叠);B 区牌只在同摞内比
+    更高层。dim/hidden 的分界是"覆盖它的牌来自多少个不同 layer"(去重计数,
+    warma13 逆向模型,§3.1)。
+    """
+    board = [t for t in tiles if t.zone == "board"]
+    for t in board:
+        if t.mold == 1:
+            overlays = [o for o in board
+                        if o.mold == 1 and o.layer > t.layer and covered(t, o)]
+        else:
+            stack = _stack_of(t)
+            overlays = [o for o in board
+                        if o.mold == 2 and _stack_of(o) == stack and o.layer > t.layer]
+        t.clickable = not overlays
+        n_layers = len({o.layer for o in overlays})
+        t.visible = BRIGHT if n_layers == 0 else (DIM if n_layers == 1 else HIDDEN)
+
+
+def pick(tiles, gx, gy):
+    """格坐标 (gx,gy) 命中的场上牌里 layer 最高的一张(上层压住时点上层)。
+
+    返回 None = 没点中。注意返回的牌未必可点:它可能被"不经过此点的更高层
+    牌"压住一小角——那是暗牌,点它等于没反应(Game.click 会拒绝)。
+    B 区同摞 11 张完全重合,命中取 layer 最高=摞顶,行为与"只有摞顶可点"一致。
+    """
+    best = None
+    for t in tiles:
+        if t.zone != "board":
+            continue
+        if t.rol <= gx < t.rol + TILE_SPAN and t.row <= gy < t.row + TILE_SPAN:
+            if best is None or t.layer > best.layer:
+                best = t
+    return best

@@ -34,7 +34,7 @@ class LevelError(ValueError):
     """关卡参数读不了/结构不对/数字对不上。报错一定带具体数字与字段。"""
 
 
-@dataclass
+@dataclass(eq=False)   # 身份相等:牌按对象区分(有唯一 id),不做逐字段比较
 class Tile:
     """一张牌(字段即契约 §5.2)。
 

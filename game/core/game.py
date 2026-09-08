@@ -5,7 +5,10 @@
 操作、非法模式)直接 raise ValueError 带完整上下文;交互性拒绝(点被压的
 暗牌)返回 ClickResult(ok=False)——UI 把它显示成"没反应",不是错误。
 """
+import random
+
 from .cover import pick as _pick, refresh_cover
+from .props import move_out as _move_out, shuffle_tiles, undo_pop
 from .slot import is_full, insert as _slot_insert
 from .tiles import deal_random, load_levels, make_skeleton
 
@@ -38,6 +41,8 @@ class Game:
         self.prop_used = {"move_out": False, "shuffle": False, "undo": False}
         self.status = STATUS_PLAYING
         self._index = {t.id: t for t in self.tiles}
+        # 洗牌道具的随机源:pattern_seed 传死值时同 seed 复现同洗牌,否则真随机
+        self._rng = random.Random(pattern_seed)
         refresh_cover(self.tiles)
 
     # ---------------------------------------------------------------- 查询
@@ -102,3 +107,41 @@ class Game:
         if t is None:
             return {"ok": False, "reason": "没点中任何牌", "eliminated": []}
         return self.click(t.id)
+
+    # ---------------------------------------------------------------- 道具
+
+    def use_prop(self, kind):
+        """用道具(每局各 1 次,原版口径 §3.1)。返回是否成功。
+
+        交互性失败(槽不够 3 张、没有可撤的步、本局用过)返回 False——UI
+        应把对应按钮置灰;程序性错误(不存在的道具名、对局已结束)raise。
+        """
+        if self.status != STATUS_PLAYING:
+            raise ValueError(f"对局已结束({self.status}),不能用道具 {kind!r}")
+        if kind not in self.prop_used:
+            raise ValueError(f"没有这种道具:{kind!r},现有 {list(self.prop_used)}")
+        if self.prop_used[kind]:
+            return False
+        if kind == "move_out":
+            moved = _move_out(self.slot, self.out_zone, self.history)
+            if moved is None:
+                return False                       # 槽不足 3 张,不动道具次数
+            for t in moved:
+                t.zone = "out"
+            self.prop_used[kind] = True
+            return True
+        if kind == "shuffle":
+            shuffle_tiles(self.tiles, self._rng)
+            self.prop_used[kind] = True
+            return True
+        # undo:撤销最后一张进槽的牌,退回来源(场上/移出区)
+        step = undo_pop(self.history)
+        if step is None:
+            return False                           # 没有可撤的步
+        tile_id, source = step
+        tile = self._index[tile_id]
+        self.slot.remove(tile)                     # 按对象身份移除(正是那张牌)
+        tile.zone = source                          # "board" 或 "out"
+        refresh_cover(self.tiles)                   # 回场上的牌重新判定遮挡
+        self.prop_used[kind] = True
+        return True

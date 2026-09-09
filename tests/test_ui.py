@@ -13,7 +13,7 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
 import pygame  # noqa: E402
 
-from game.ui import App, MenuScene, PlayScene, ResultScene  # noqa: E402
+from game.ui import (App, BG, MenuScene, PANEL, PlayScene, ResultScene)  # noqa: E402
 
 
 def click(pos):
@@ -96,6 +96,26 @@ def test_prop_button_wired():
     assert scene.game.prop_used["move_out"] is True
     assert len(scene.game.slot) == 0
     assert len(scene.game.out_zone) == 3
+
+
+def test_prop_buttons_visible_over_panel():
+    """道具按钮必须真的画在面板之上(回归:面板曾画在按钮之后,把整个
+    道具栏盖住——点击逻辑照常所以旧测试全绿,用户实测"看不见道具栏")。"""
+    app = App()
+    app.scenes = [PlayScene(app, 2, "classic", pattern_seed=0)]
+    app.step([])                               # 开局一帧
+    scene = app.scene()
+    expect = {"shuffle": (236, 122, 52),       # 开局洗牌可用:亮橙底
+              "move_out": (190, 184, 174),      # 槽空:置灰底
+              "undo": (190, 184, 174)}          # 无撤销历史:置灰底
+    for rect, kind, _ in scene.buttons:
+        colors = set()
+        for x in range(rect.x + 2, rect.right - 2, 3):
+            for y in range(rect.y + 2, rect.bottom - 2, 3):
+                colors.add(app.screen.get_at((x, y))[:3])
+        assert expect[kind] in colors, \
+            f"{kind} 按钮底色没画出来(被面板盖住?):画面里只有 {sorted(colors)}"
+        assert PANEL in colors or BG in colors  # 按钮确实落在面板带上
 
 
 def autoplay_level1(app, scene, seed=3):

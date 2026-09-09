@@ -234,8 +234,10 @@ class PlayScene(Scene):
         g = self.game
         anim_ids = {a["tile"].id for a in self.anims}
         screen.fill(BG)
-        self._draw_hud(screen)
+        # 面板先画(HUD 的道具按钮落在移出区面板上,后画会盖住按钮——
+        # 2026-09-09 用户实测"看不见道具栏"即此顺序反了)
         self._draw_panels(screen)
+        self._draw_hud(screen)
         self._draw_board(screen, anim_ids)
         self._draw_zones(screen, anim_ids)
         self._draw_anims(screen)

@@ -19,7 +19,7 @@ import pygame  # noqa: E402
 
 from game.ui import App, MenuScene, PlayScene  # noqa: E402
 
-BG = (36, 40, 52)
+BG = (246, 240, 227)
 
 
 def content_ratio(screen):

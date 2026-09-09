@@ -1,8 +1,10 @@
 # 羊了个羊(Pygame 复刻)
 
 2022 年爆火的微信小程序游戏《羊了个羊》的 Python + Pygame 复刻:玩法机制
-按原版反编译源码与抓包数据 1:1 还原(见《羊了个羊-设计文档.md》§3.1),
-零外部素材(牌面运行时自绘),零网络。
+按原版反编译源码与抓包数据 1:1 还原(见《羊了个羊-设计文档.md》§3.1)。
+牌面运行时自绘(白色圆角卡 + 彩色 emoji 图案);字体内置开源素材
+(站酷快乐体 + Noto Emoji,均 OFL 协议,见 `game/assets/fonts/`),
+运行时零网络。
 
 玩法一句话:点牌堆里没被压住的牌,牌进底部 7 格槽,凑满 3 张同图案立即
 消除,全部消完过关;槽被 7 张凑不成对的牌塞满就失败。
@@ -20,7 +22,7 @@
 
 ```bash
 ./run.sh          # 玩(自动用项目自带 venv,屏蔽系统 PYTHONPATH 污染)
-./test.sh         # 跑全部 113 个单元测试
+./test.sh         # 跑全部 114 个单元测试
 env -u PYTHONPATH .venv/bin/python scripts/walkthrough.py
                   # 无头自动对局验收(第一关百局必胜/第二关随机必负/可解回放必胜)
 .venv/bin/python scripts/solve.py 2 12345
@@ -30,15 +32,15 @@ env -u PYTHONPATH .venv/bin/python scripts/walkthrough.py
 ```
 
 依赖:Python 3.10+、pygame 2.6.1、pytest(项目 `.venv` 已装好;自装用
-`pip install pygame pytest`)。中文字体用系统 Noto Sans CJK(Ubuntu:
-`sudo apt install fonts-noto-cjk`,缺失会在启动时报错并给出指引)。
+`pip install pygame pytest`)。中文字体已内置随仓库(站酷快乐体,OFL 开源,
+无需安装系统字体);字体文件损坏时自动回退系统 Noto Sans CJK。
 
 ## 操作
 
 | 输入 | 作用 |
 |---|---|
 | 鼠标左键 | 点牌(被压的暗牌点了没反应)/ 按按钮 |
-| 顶部 移出 / 洗牌 / 撤销 | 用道具(每局各 1 次,不可用时置灰) |
+| 槽区上方右侧 移出 / 洗牌 / 撤销 | 用道具(每局各 1 次,不可用时置灰) |
 | Esc | 回主菜单 |
 | R | 重开当前关(重新随机发牌) |
 
@@ -58,11 +60,11 @@ game/
     game.py          Game 门面——ui/脚本只认它
     solver.py        逆向构造(必可解发牌)+ 回溯求解器(限时限节点)
     tween.py         补间纯函数(lerp/easing)
-  assets.py         自绘牌面(15 种"底色+汉字")、中文字体链与自检
+  assets.py         自绘牌面(15 种"白卡+彩色 emoji")、内置字体链与自检
   ui.py              场景栈(菜单/游戏/结算)、布局换算、动画
   main.py            入口
 scripts/             walkthrough(无头对局验收)/solve(可解性)/screenshot
-tests/               113 个 pytest 用例(逻辑全量 + dummy 无头渲染链路)
+tests/               114 个 pytest 用例(逻辑全量 + dummy 无头渲染链路)
 ```
 
 骨架(位置/层)与图案分布是两个独立随机源(skeleton_seed 固定关卡形态、

@@ -7,11 +7,13 @@
 播完最后一组动画再压栈)。App.run() 是主循环,App.step() 供无头测试单帧
 驱动(SDL_VIDEODRIVER=dummy,事件直接以参数传入,不用 event.post)。
 
-布局(540×960 竖屏,原版手机比例):
-  标题栏 y 0~40(右半放 3 个道具按钮:移出/洗牌/撤销)
+布局(540×960 竖屏,原版手机比例,奶油底+白卡牌面):
+  标题栏 y 0~40(左上角标题)
   A 区 格原点 y=44、格 36px、牌 72×72(牌占 2×2 格,列数按关卡居中)
   B 区 2 摞盲盒 摞顶 y=632、每张向下偏 6px(原版只露 6px 阴影条)
   移出区 y=776(3 格,原版临时区在槽上方)
+  道具栏 移出区右侧(3 个 96×48 大按钮:移出/洗牌/撤销——放槽附近才显眼,
+        2026-09-09 用户反馈"缺少道具功能"后从顶部小按钮搬来)
   槽 y=856(7 格,原版槽在最底)
   状态行 y=932(屏底,场上/槽数计数——放 A 区内会被牌堆盖住)
 """
@@ -31,9 +33,10 @@ OUT_Y = 776                  # 移出区牌 y
 SLOT_Y = 856                 # 槽牌 y
 ROW_PITCH = 76               # 槽/移出区每格横向间距
 
-BG = (36, 40, 52)
-PANEL = (28, 32, 42)
-FG = (200, 204, 214)
+BG = (246, 240, 227)         # 奶油底(原版米色牌桌)
+PANEL = (230, 221, 203)      # 移出区/槽面板
+FG = (96, 86, 70)            # 正文深棕灰
+TITLE = (74, 62, 44)         # 标题深棕
 
 # 槽/移出区 7 格在 540 宽里整体居中的起点(全宽居中,不跟着关卡列数走)
 SLOT_X0 = (W - (7 * ROW_PITCH - (ROW_PITCH - TILE))) // 2
@@ -96,7 +99,7 @@ class MenuScene(Scene):
 
     def draw(self, screen):
         screen.fill(BG)
-        title = assets.cn_font(64).render("羊了个羊", True, (250, 250, 250))
+        title = assets.cn_font(64).render("羊了个羊", True, (82, 62, 34))
         screen.blit(title, title.get_rect(center=(W // 2, 150)))
         sub = assets.cn_font(22).render("点三张同图案消除 · 清空全场过关 · 槽满即负",
                                          True, FG)
@@ -119,8 +122,10 @@ class PlayScene(Scene):
         self.anims = []            # 牌动画:fly 飞入槽 / fade 淡出消除
         self._finish_pending = False
         self._click_lock = 0.0     # 防连点锁:点牌后 0.15s 内忽略下一次牌点击(§3.3)
+        # 道具栏:移出区右侧一排大按钮(96×48),挨着槽——原版道具也在底部
+        # 牌区,顶部小按钮曾被用户当成"没有道具功能"
         self.buttons = [
-            (pygame.Rect(300 + i * 78, 4, 72, 32), kind, label)
+            (pygame.Rect(236 + i * 102, 788, 96, 48), kind, label)
             for i, (kind, label) in enumerate(PROPS)
         ]
 
@@ -240,7 +245,7 @@ class PlayScene(Scene):
             screen.blit(veil, (0, 0))
 
     def _draw_hud(self, screen):
-        title = assets.cn_font(26).render("羊了个羊", True, (245, 245, 245))
+        title = assets.cn_font(26).render("羊了个羊", True, TITLE)
         screen.blit(title, (12, 8))
         g = self.game
         label = {"1": "第一关", "2": "第二关"}[g.level_id]
@@ -254,7 +259,7 @@ class PlayScene(Scene):
             ok = g.status == "playing" and not g.prop_used[kind] and (
                 kind != "move_out" or len(g.slot) >= 3) and (
                 kind != "undo" or bool(g.history))
-            screen.blit(assets.button(text, rect.w, rect.h, ok, 18), rect.topleft)
+            screen.blit(assets.button(text, rect.w, rect.h, ok, 22), rect.topleft)
 
     def _draw_panels(self, screen):
         for y in (OUT_Y - 8, SLOT_Y - 8):
@@ -343,7 +348,7 @@ class ResultScene(Scene):
             big, small = "失败了,槽满啦", "别灰心,原版通关率也只有 0.01%"
         title = assets.cn_font(56).render(big, True, (250, 250, 250))
         screen.blit(title, title.get_rect(center=(W // 2, 380)))
-        sub = assets.cn_font(22).render(small, True, FG)
+        sub = assets.cn_font(22).render(small, True, (224, 220, 210))
         screen.blit(sub, sub.get_rect(center=(W // 2, 450)))
         for rect, text, _ in self.buttons:
             screen.blit(assets.button(text, rect.w, rect.h, True, 24), rect.topleft)

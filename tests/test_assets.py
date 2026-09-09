@@ -26,19 +26,34 @@ def test_font_health():
 def test_cn_font_renders_wide():
     f = assets.cn_font(24)
     w_cjk, _ = f.size("羊了个羊")
-    # 4 个 24 号汉字宽约 96;默认字体的破碎占位符只有约 30——两边差 3 倍
-    assert w_cjk >= 4 * 24 * 0.9
+    # 4 个 24 号汉字宽约 85(站酷快乐体略窄于 Noto);默认字体的破碎占位符
+    # 只有约 30——两边差近 3 倍。阈值取 0.8×86 留字体固有窄度,仍远高于占位符
+    assert w_cjk >= 4 * 24 * 0.8
+
+
+def test_emoji_font_renders_ink():
+    """15 种图案的 emoji 在 Noto Emoji 单色字体里全部有真实墨水(不是空/豆腐)。"""
+    for type_id, (emoji, color) in assets.FACES.items():
+        surf, _ = assets.emoji_font(48).render(emoji, fgcolor=(*color, 255))
+        w, h = surf.get_size()
+        ink = sum(1 for x in range(0, w, 2) for y in range(0, h, 2)
+                  if surf.get_at((x, y))[3] > 40)
+        assert ink >= 8, f"图案 {type_id}({emoji}) emoji 无墨水:字体覆盖缺失"
 
 
 def test_tile_face_pixels():
-    """§6.5-20:15 种牌面全部可画,中心像素等于各自底色。"""
-    for type_id, (ch, color) in assets.FACES.items():
+    """§6.5-20:15 种牌面全部可画:白卡面 + emoji 彩色墨水 + 底部淡色条。"""
+    for type_id, (emoji, color) in assets.FACES.items():
         face = assets.tile_face(type_id, 72)
         assert face.get_size() == (72, 72)
-        # 中心是汉字笔画,取左上角(9,9) 离圆角和描边都远,必是底色
-        r, g, b, a = face.get_at((9, 9))
-        assert (r, g, b) == color, f"图案 {type_id} 底色错:{(r, g, b)} != {color}"
-        assert a == 255
+        r, g, b, a = face.get_at((8, 8))          # 圆角内、图案外的卡面
+        assert (r, g, b) == (255, 253, 248) and a == 255
+        # emoji 真画出来了:图案区有非卡面白的墨水像素
+        ink = sum(1 for x in range(14, 58, 2) for y in range(12, 48, 2)
+                  if face.get_at((x, y))[:3] != (255, 253, 248))
+        assert ink >= 8, f"图案 {type_id}({emoji}) 牌面无墨水"
+        # 底部色条:图案专属色的淡版,和卡面白可区分
+        assert face.get_at((36, 68))[:3] != (255, 253, 248)
 
 
 def test_tile_face_cache_identity():
